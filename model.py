@@ -1,6 +1,6 @@
 
 import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # Force to use CPU
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import cv2
@@ -73,41 +73,49 @@ print(data_test.shape[0], 'test samples')
 label_train = np_utils.to_categorical(label_train, nb_classes)
 label_test  = np_utils.to_categorical(label_test, nb_classes)
 
+inputs = Input(shape=(img_rows, img_cols, 3, ))
 
 # Build model
-model = Sequential()
-model.add(Conv2D(16, nb_conv, nb_conv, border_mode='valid', input_shape=(img_rows, img_cols,3)))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(nb_pool, nb_pool)))
-model.add(Conv2D(64, nb_conv, nb_conv))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(nb_pool, nb_pool)))
-model.add(Dropout(0.25))
+M = Conv2D(16, nb_conv, nb_conv, border_mode='valid')(inputs)
+M = Activation('relu')(M)
+M = MaxPooling2D(pool_size=(nb_pool, nb_pool))(M)
+M = Conv2D(64, nb_conv, nb_conv)(M)
+M = Activation('relu')(M)
+M = MaxPooling2D(pool_size=(nb_pool, nb_pool))(M)
+M = Dropout(0.25)(M)
+M = Conv2DTranspose(16,(nb_conv,nb_conv),strides=(2,2))(M)
+M = Conv2DTranspose(3,(nb_conv,nb_conv),strides=(2,2))(M)
+M = MaxPooling2D(pool_size=(nb_pool, nb_pool))(M)
+maskOut = Dropout(0.25)(M)
+mask = Model(inputs,maskOut)
 
-model.add(Conv2DTranspose(16,(nb_conv,nb_conv),strides=(2,2)))
-model.add(Conv2DTranspose(3,(nb_conv,nb_conv),strides=(2,2)))
-model.add(MaxPooling2D(pool_size=(nb_pool, nb_pool)))
-model.add(Dropout(0.25))
+M = Conv2D(16, nb_conv, nb_conv)(inputs)
+M = Activation('relu')(M)
+M = Conv2D(64, nb_conv, nb_conv)(M)
+M = Activation('relu')(M)
+M = MaxPooling2D(pool_size=(nb_pool, nb_pool))(M)
+M = Dropout(0.25)(M)
+M = Flatten()(M)
+M = Dense(128)(M)
+M = Activation('relu')(M)
+M = Dropout(0.5)(M)
+M = Dense(nb_classes)(M)
+detecteroOut = Activation('softmax')(M)
+dectector = Model(inputs,detectorOut)
 
-model.add(Conv2D(16, nb_conv, nb_conv))
-model.add(Activation('relu'))
-model.add(Conv2D(64, nb_conv, nb_conv))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(nb_pool, nb_pool)))
-model.add(Dropout(0.25))
+detector.compile(loss='categorical_crossentropy',
+              optimizer='adadelta',
+              metrics=['accuracy'])
 
-model.add(Flatten())
-model.add(Dense(128))
-model.add(Activation('relu'))
-model.add(Dropout(0.5))
-model.add(Dense(nb_classes))
-model.add(Activation('softmax'))
-
+M = mask(inputs)
+model = detector(M)
 model.compile(loss='categorical_crossentropy',
               optimizer='adadelta',
               metrics=['accuracy'])
 
 # Train 
+detector.fit(data_train, label_train, batch_size=batch_size, epochs=epochs, \
+        verbose=1, validation_data=(data_test, label_test))
 model.fit(data_train, label_train, batch_size=batch_size, epochs=epochs, \
         verbose=1, validation_data=(data_test, label_test))
 
